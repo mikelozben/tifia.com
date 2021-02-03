@@ -23,9 +23,22 @@ $config = [
                     'class' => 'yii\log\FileTarget',
                     'levels' => ['error', 'warning'],
                 ],
+                [
+                    'class' => 'yii\log\FileTarget',
+                    'levels' => ['trace'],
+                    'logVars' => [],
+                    'logFile' => '@runtime/logs/debug.log',
+                ],
             ],
         ],
         'db' => $db,
+        'referralNetwork' => [
+            'class' => 'app\services\ReferralNetwork',
+            'partnerTableName' => 'partner_net',
+            'userTableName' => 'users',
+            'accountsTableName' => 'accounts',
+            'tradesTableName' => 'trades',
+        ]
     ],
     'params' => $params,
     /*
