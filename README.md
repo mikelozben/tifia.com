@@ -99,13 +99,21 @@ referral/rebuild-partner-net-for-client 82824897
 ~~~
 
 ### Network visualization
-#### All network
+#### All network without relations table
 ~~~
 referral/full-net-without-relation-table
 ~~~
-#### Network for given client uid
+#### All network with relations table
+~~~
+referral/full-net-with-relation-table
+~~~
+#### Network for given client uid without relations table
 ~~~
 referral/full-net-for-client-without-relation-table 82824897
+~~~
+#### Network for given client uid with relations table
+~~~
+referral/full-net-for-client-with-relation-table 82824897
 ~~~
 
 ### Test queries

@@ -3,6 +3,7 @@
 namespace app\services;
 
 use Yii;
+use Exception;
 use yii\db\Query;
 use yii\base\Component;
 
@@ -126,6 +127,7 @@ class ReferralNetwork extends Component
             ->from($this->userTableName)
             ->where(['partner_id' => 0])
             ->orWhere('partner_id IS NULL')
+            ->orderBy(['client_uid' => SORT_ASC])
             ->column();
     }
 
@@ -237,7 +239,7 @@ class ReferralNetwork extends Component
     /**
      * Rebuilds partner network.
      *
-     * @throws \Exception
+     * @throws Exception
      */
     public function rebuildPartnerNet()
     {
@@ -308,7 +310,7 @@ class ReferralNetwork extends Component
      * @param string $dateTimeStart
      * @param string $dateTimeEnd
      *
-     * @return mixed
+     * @return float
      */
     public function calcTotalVolumeForReferralNetForClientUid(
         int $clientUid,
@@ -318,7 +320,7 @@ class ReferralNetwork extends Component
         $referralNetUids = array_merge([$clientUid], $this->getReferralNetworkUidsForClientUid($clientUid));
         $logins = $this->getTradeLoginsForClientUids($referralNetUids);
 
-        return (new Query())
+        return (float) (new Query())
             ->select('sum(volume*coeff_h*coeff_cr)')
             ->from($this->tradesTableName)
             ->where(['in', 'login', $logins])
@@ -333,7 +335,7 @@ class ReferralNetwork extends Component
      * @param string $dateTimeStart
      * @param string $dateTimeEnd
      *
-     * @return mixed
+     * @return float
      */
     public function calcTotalProfitForReferralNetForClientUid(
         int $clientUid,
@@ -343,7 +345,7 @@ class ReferralNetwork extends Component
         $referralNetUids = array_merge([$clientUid], $this->getReferralNetworkUidsForClientUid($clientUid));
         $logins = $this->getTradeLoginsForClientUids($referralNetUids);
 
-        return (new Query())
+        return (float) (new Query())
             ->select('sum(profit)')
             ->from($this->tradesTableName)
             ->where(['in', 'login', $logins])
@@ -356,11 +358,11 @@ class ReferralNetwork extends Component
      *
      * @param int $clientUid
      *
-     * @return mixed
+     * @return int
      */
     public function calcDirectReferralsForClientUid(int $clientUid)
     {
-        return (new Query())
+        return (int) (new Query())
             ->select(['client_uid'])
             ->from($this->partnerTableName)
             ->where(['partner_uid' => $clientUid])
@@ -373,14 +375,85 @@ class ReferralNetwork extends Component
      *
      * @param int $clientUid
      *
-     * @return mixed
+     * @return int
      */
     public function calcAllReferralsForClientUid(int $clientUid)
     {
-        return (new Query())
+        return (int) (new Query())
             ->select(['client_uid'])
             ->from($this->partnerTableName)
             ->where(['partner_uid' => $clientUid])
             ->count();
+    }
+
+    /**
+     * Loads partners tree in a connections list for given client uid.
+     *
+     * @param int $clientUid
+     *
+     * @return array
+     */
+    public function loadReferralNetworkForClientUid(int $clientUid)
+    {
+        $parentUids = [$clientUid];
+        $tree = [];
+
+        while (!empty($parentUids) && ($nodes =  (new Query())
+            ->select(['client_uid', 'partner_uid'])
+            ->from($this->partnerTableName)
+            ->where(['in', 'partner_uid', $parentUids])
+            ->andWhere(['level' => 1])
+            ->orderBy(['client_uid' => SORT_ASC])
+            ->all()
+        )) {
+            $parentUids = [];
+            foreach ($nodes as $node) {
+                $partnerUid = (int) $node['partner_uid'];
+                $clientUid = (int) $node['client_uid'];
+
+                $parentUids[] = $clientUid;
+
+                if (!array_key_exists($partnerUid, $tree)) {
+                    $tree[$partnerUid] = [];
+                }
+                $tree[$partnerUid][] = $clientUid;
+            }
+        }
+
+        return $tree;
+    }
+
+    /**
+     * Loads root nodes and partners tree in a connections list.
+     *
+     * @return array
+     */
+    public function loadReferralNetwork()
+    {
+        $tree = [];
+
+        $nodes =  (new Query())
+            ->select(['client_uid', 'partner_uid'])
+            ->from($this->partnerTableName)
+            ->where(['level' => 1])
+            ->orderBy(['client_uid' => SORT_ASC])
+            ->all();
+
+        foreach ($nodes as $node) {
+            $partnerUid = (int) $node['partner_uid'];
+            $clientUid = (int) $node['client_uid'];
+
+            $parentUids[] = $clientUid;
+
+            if (!array_key_exists($partnerUid, $tree)) {
+                $tree[$partnerUid] = [];
+            }
+            $tree[$partnerUid][] = $clientUid;
+        }
+
+        return [
+            'rootNodes' => $this->getRootPartnerUids(),
+            'tree' => $tree
+        ];
     }
 }

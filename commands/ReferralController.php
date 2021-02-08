@@ -2,8 +2,10 @@
 
 namespace app\commands;
 
+use app\models\ClientWithTimeIntervalsForm;
 use Yii;
-use app\models\PartnerNet;
+use Exception;
+use app\models\ClientForm;
 use app\models\User;
 use yii\console\Controller;
 use yii\console\ExitCode;
@@ -15,6 +17,13 @@ use yii\console\ExitCode;
  */
 class ReferralController extends Controller
 {
+    /**
+     * Recursively echoes partners net without relations table.
+     *
+     * @param User $user
+     * @param int $netTabulationNum
+     * @param int $level
+     */
     public static function echoNetLevel(User $user, int $netTabulationNum, int $level) {
         $clientUid = (string) $user->client_uid;
         echo str_repeat(' ', $netTabulationNum)
@@ -28,6 +37,45 @@ class ReferralController extends Controller
                 $level + 1
             );
         }
+    }
+
+    /**
+     * Recursively echoes partners net using relations table.
+     *
+     * @param array $tree
+     * @param array $nodes
+     * @param int $level
+     */
+    public static function echoPartnerTreeNet(array $tree, array $nodes, int $level) {
+        foreach ($nodes as $node) {
+            $clientUid = (string)$node;
+            echo str_repeat(' ', $level * 4)
+                . "|- [level #{$level}] "
+                . $clientUid . PHP_EOL;
+
+            if (array_key_exists($node, $tree)) {
+                foreach ($tree[$node] as $nextNode) {
+                    self::echoPartnerTreeNet(
+                        $tree,
+                        [$nextNode],
+                        $level + 1
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Process exceptions.
+     *
+     * @param Exception $ex
+     *
+     * @return int
+     */
+    public static function processException(Exception $ex)
+    {
+        echo 'ERROR : ' . $ex->getMessage() . PHP_EOL;
+        return ExitCode::DATAERR;
     }
 
     /**
@@ -50,15 +98,71 @@ class ReferralController extends Controller
     }
 
     /**
+     * Echoes partner network without using relation table.
+     *
+     * @return int Exit code
+     */
+    public function actionFullNetWithRelationTable()
+    {
+        $referralNetworkData = Yii::$app->referralNetwork->loadReferralNetwork();
+
+        self::echoPartnerTreeNet(
+            $referralNetworkData['tree'],
+            $referralNetworkData['rootNodes'],
+            0
+        );
+
+        return ExitCode::OK;
+    }
+
+    /**
      * Echoes partner network for given client uid, e.g. 82824897, without using relation table.
      *
-     * @param $client_uid
+     * @param int $clientUid
      *
      * @return int Exit code
      */
     public function actionFullNetForClientWithoutRelationTable(int $clientUid)
     {
-        self::echoNetLevel(User::findOne(['client_uid' => $clientUid]), 0, 0);
+        $clientForm = new ClientForm(['clientUid' => $clientUid]);
+
+        try {
+            $clientForm->checkIfValid();
+
+            self::echoNetLevel(
+                User::findOne(['client_uid' => $clientForm->clientUid]),
+                0,
+                0
+            );
+        } catch (Exception $ex) {
+            self::processException($ex);
+        }
+
+        return ExitCode::OK;
+    }
+
+    /**
+     * Echoes partner network for given client uid, e.g. 82824897, using relation table.
+     *
+     * @param int $clientUid
+     *
+     * @return int Exit code
+     */
+    public function actionFullNetForClientWithRelationTable(int $clientUid)
+    {
+        $clientForm = new ClientForm(['clientUid' => $clientUid]);
+
+        try {
+            $clientForm->checkIfValid();
+
+            self::echoPartnerTreeNet(
+                Yii::$app->referralNetwork->loadReferralNetworkForClientUid($clientForm->clientUid),
+                [$clientForm->clientUid],
+                0
+            );
+        } catch (Exception $ex) {
+            self::processException($ex);
+        }
 
         return ExitCode::OK;
     }
@@ -70,11 +174,17 @@ class ReferralController extends Controller
      *
      * @return int Exit code
      *
-     * @throws \Exception
+     * @throws Exception
      */
     public function actionRebuildPartnerNetForClient(int $clientUid)
     {
-        Yii::$app->referralNetwork->rebuildPartnerNetForClientUid($clientUid);
+        $clientForm = new ClientForm(['clientUid' => $clientUid]);
+
+        try {
+            $clientForm->rebuildPartnerNet();
+        } catch (Exception $ex) {
+            self::processException($ex);
+        }
 
         return ExitCode::OK;
     }
@@ -106,13 +216,19 @@ class ReferralController extends Controller
         string $dateTimeEnd
 
     ) {
-        echo 'volume : '
-            . Yii::$app->referralNetwork->calcTotalVolumeForReferralNetForClientUid(
-                $clientUid,
-                $dateTimeStart,
-                $dateTimeEnd
-            )
-            . PHP_EOL;
+        $clientWithTimeIntervalsForm = new ClientWithTimeIntervalsForm([
+            'clientUid' => $clientUid,
+            'dateTimeStart' => $dateTimeStart,
+            'dateTimeEnd' => $dateTimeEnd,
+        ]);
+
+        try {
+            echo 'volume : '
+                . $clientWithTimeIntervalsForm->calcTotalVolumeForReferralNet()
+                . PHP_EOL;
+        } catch (Exception $ex) {
+            self::processException($ex);
+        }
 
         return ExitCode::OK;
     }
@@ -132,13 +248,19 @@ class ReferralController extends Controller
         string $dateTimeEnd
 
     ) {
-        echo 'profit : '
-            . Yii::$app->referralNetwork->calcTotalProfitForReferralNetForClientUid(
-                $clientUid,
-                $dateTimeStart,
-                $dateTimeEnd
-            )
-            . PHP_EOL;
+        $clientWithTimeIntervalsForm = new ClientWithTimeIntervalsForm([
+            'clientUid' => $clientUid,
+            'dateTimeStart' => $dateTimeStart,
+            'dateTimeEnd' => $dateTimeEnd,
+        ]);
+
+        try {
+            echo 'profit : '
+                . $clientWithTimeIntervalsForm->calcTotalProfitForReferralNet()
+                . PHP_EOL;
+        } catch (Exception $ex) {
+            self::processException($ex);
+        }
 
         return ExitCode::OK;
     }
@@ -151,9 +273,15 @@ class ReferralController extends Controller
      * @return int
      */
     public function actionGetDirectReferralsNumberForClientUid(int $clientUid) {
-        echo 'direct referrals number : '
-            . Yii::$app->referralNetwork->calcDirectReferralsForClientUid($clientUid)
-            . PHP_EOL;
+        $clientForm = new ClientForm(['clientUid' => $clientUid]);
+
+        try {
+            echo 'direct referrals number : '
+                . $clientForm->calcDirectReferralsNumber()
+                . PHP_EOL;
+        } catch (Exception $ex) {
+            self::processException($ex);
+        }
 
         return ExitCode::OK;
     }
@@ -166,9 +294,15 @@ class ReferralController extends Controller
      * @return int
      */
     public function actionGetAllReferralsNumberForClientUid(int $clientUid) {
-        echo 'direct referrals number : '
-            . Yii::$app->referralNetwork->calcAllReferralsForClientUid($clientUid)
-            . PHP_EOL;
+        $clientForm = new ClientForm(['clientUid' => $clientUid]);
+
+        try {
+            echo 'direct referrals number : '
+                . $clientForm->calcAllReferralsNumber()
+                . PHP_EOL;
+        } catch (Exception $ex) {
+            self::processException($ex);
+        }
 
         return ExitCode::OK;
     }

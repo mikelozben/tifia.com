@@ -41,6 +41,8 @@ class User extends ActiveRecord
     {
         return static::find()->where([
             'partner_id' => $this->client_uid
-        ])->all();
+        ])
+        ->orderBy(['client_uid' => SORT_ASC])
+        ->all();
     }
 }
